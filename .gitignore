@@ -218,3 +218,19 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Datos del proyecto - NO SUBIR A GIT
+data/raw/*
+data/processed/*
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+
+# Resultados grandes
+results/models/*
+results/plots/*
+!results/models/.gitkeep
+!results/plots/.gitkeep
+
+# Credenciales Kaggle
+.kaggle/
+kaggle.json
