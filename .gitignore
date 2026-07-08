@@ -234,3 +234,15 @@ results/plots/*
 # Credenciales Kaggle
 .kaggle/
 kaggle.json
+# KaggleHub cache y datasets grandes
+kagglehub_cache/
+data/raw/
+*.jpg
+*.jpeg
+*.png
+*.webp
+*.bmp
+*.zip
+
+# Jupyter temporales
+.ipynb_checkpoints/
