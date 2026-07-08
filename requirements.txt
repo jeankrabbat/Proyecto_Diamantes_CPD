@@ -55,3 +55,11 @@ typing_extensions==4.15.0
 urllib3==2.7.0
 wcwidth==0.8.2
 webencodings==0.5.1
+
+kagglehub
+pandas
+numpy
+matplotlib
+pillow
+opencv-python-headless
+tqdm
