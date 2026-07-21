@@ -225,11 +225,8 @@ data/processed/*
 !data/raw/.gitkeep
 !data/processed/.gitkeep
 
-# Resultados grandes
-results/models/*
-results/plots/*
-!results/models/.gitkeep
-!results/plots/.gitkeep
+# Resultados generados
+results/
 
 # Credenciales Kaggle
 .kaggle/

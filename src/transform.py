@@ -95,51 +95,6 @@ def normalizar_color(valor):
     return None
 
 
-def obtener_grupo_color(valor):
-    """
-    Agrupa los colores según las categorías compartidas:
-
-    D
-    E-F
-    G-H
-    I-J
-    K-M
-    N-R
-    S-Z
-
-    Los rangos se clasifican usando su primera letra.
-    """
-    color = normalizar_color(valor)
-
-    if color is None:
-        return None
-
-    letra_inicial = color.split("-")[0]
-
-    if letra_inicial == "D":
-        return "D"
-
-    if letra_inicial in ["E", "F"]:
-        return "E-F"
-
-    if letra_inicial in ["G", "H"]:
-        return "G-H"
-
-    if letra_inicial in ["I", "J"]:
-        return "I-J"
-
-    if letra_inicial in ["K", "L", "M"]:
-        return "K-M"
-
-    if letra_inicial in ["N", "O", "P", "Q", "R"]:
-        return "N-R"
-
-    if letra_inicial in ["S", "T", "U", "V", "W", "X", "Y", "Z"]:
-        return "S-Z"
-
-    return None
-
-
 def preparar_metadata(metadata, carpeta_datos="data/raw"):
     """
     Limpia y estandariza el DataFrame de metadatos.
@@ -180,8 +135,6 @@ def preparar_metadata(metadata, carpeta_datos="data/raw"):
     datos["shape"] = datos["shape"].apply(normalizar_forma)
     datos["clarity"] = datos["clarity"].apply(normalizar_claridad)
     datos["colour"] = datos["colour"].apply(normalizar_color)
-    datos["colour_group"] = datos["colour"].apply(obtener_grupo_color)
-
     carpeta_datos = Path(carpeta_datos)
 
     datos["full_path"] = datos["path_to_img"].apply(
@@ -191,13 +144,12 @@ def preparar_metadata(metadata, carpeta_datos="data/raw"):
     registros_iniciales = len(datos)
 
     datos = datos.dropna(
-        subset=[
-            "shape",
-            "clarity",
-            "colour",
-            "colour_group",
-            "full_path"
-        ]
+    subset=[
+        "shape",
+        "clarity",
+        "colour",
+        "full_path"
+    ]
     ).copy()
 
     datos = datos[
@@ -265,7 +217,7 @@ def crear_muestra_balanceada(
         candidatos_diversos = (
             grupo
             .drop_duplicates(
-                subset=["colour_group", "clarity"]
+                subset=["colour", "clarity"]
             )
             .sample(
                 frac=1,
@@ -315,7 +267,7 @@ def crear_muestra_balanceada(
 
     muestra_final = (
         muestra_final
-        .sort_values(["shape", "colour_group", "clarity"])
+        .sort_values(["shape", "colour", "clarity"])
         .reset_index(drop=True)
     )
 
@@ -331,7 +283,7 @@ def crear_muestra_balanceada(
 
     print("\nDistribución por grupo de color:")
     print(
-        muestra_final["colour_group"]
+        muestra_final["colour"]
         .value_counts()
         .sort_index()
     )
@@ -346,7 +298,7 @@ def crear_muestra_balanceada(
     print("\nValores faltantes:")
     print(
         muestra_final[
-            ["shape", "colour", "colour_group", "clarity"]
+            ["shape", "colour", "colour", "clarity"]
         ].isna().sum()
     )
 
@@ -415,143 +367,45 @@ def procesar_imagen(args):
         return ruta_imagen, None
 
 
-def procesar_lote(
-    rutas_imagenes,
-    tamaño=(224, 224),
-    num_procesos=4,
-    tamaño_lote=5000,
-    carpeta_salida="data/processed",
-    prefijo="lote"
-):
+def procesar_lote(args):
     """
-    Procesa imágenes por lotes y conserva el mismo orden de entrada.
+    Procesa un lote de imágenes.
 
-    A diferencia de la versión anterior, utiliza Pool.map en lugar de
-    imap_unordered. Esto evita que las imágenes se desordenen y pierdan
-    correspondencia con sus etiquetas.
-
-    Parameters
-    ----------
-    rutas_imagenes : list
-        Rutas completas de las imágenes.
-
-    tamaño : tuple
-        Resolución final, por ejemplo (224, 224).
-
-    num_procesos : int
-        Número de procesos paralelos.
-
-    tamaño_lote : int
-        Número máximo de imágenes por archivo.
-
-    carpeta_salida : str
-        Carpeta donde se guardarán los lotes.
-
-    prefijo : str
-        Prefijo usado para los archivos NPZ.
-
-    Returns
-    -------
-    list
-        Información de los archivos generados.
+    Retorna:
+        - imágenes válidas
+        - rutas válidas
+        - rutas fallidas
+        - cantidad de imágenes válidas
+        - cantidad de imágenes fallidas
     """
-    if not rutas_imagenes:
-        raise ValueError(
-            "La lista de rutas de imágenes está vacía."
+
+    rutas_lote, tamano = args
+
+    imagenes_validas = []
+    rutas_validas = []
+    rutas_fallidas = []
+
+    for ruta in rutas_lote:
+
+        imagen = procesar_imagen(
+            ruta_imagen=ruta,
+            tamano_esperado=tamano
         )
 
-    ancho, alto = tamaño
-
-    carpeta_resolucion = Path(carpeta_salida) / f"{ancho}x{alto}"
-    carpeta_resolucion.mkdir(parents=True, exist_ok=True)
-
-    total = len(rutas_imagenes)
-    archivos_generados = []
-
-    contador_lote = 0
-
-    for inicio in range(0, total, tamaño_lote):
-        fin = min(inicio + tamaño_lote, total)
-        rutas_lote = rutas_imagenes[inicio:fin]
-
-        print(
-            f"Procesando resolución {ancho}x{alto}, "
-            f"lote {inicio}-{fin}/{total}..."
-        )
-
-        argumentos = [
-            (ruta, tamaño)
-            for ruta in rutas_lote
-        ]
-
-        with Pool(processes=num_procesos) as pool:
-            resultados = pool.map(
-                procesar_imagen,
-                argumentos,
-                chunksize=50
-            )
-
-        imagenes_validas = []
-        rutas_validas = []
-        rutas_fallidas = []
-
-        for ruta, imagen in resultados:
-            if imagen is None:
-                rutas_fallidas.append(ruta)
-            else:
-                rutas_validas.append(ruta)
-                imagenes_validas.append(imagen)
-
-        if not imagenes_validas:
-            print(
-                "Advertencia: no se pudo procesar ninguna imagen "
-                f"del lote {contador_lote}."
-            )
-            contador_lote += 1
+        if imagen is None:
+            rutas_fallidas.append(ruta)
             continue
 
-        array_lote = np.stack(
-            imagenes_validas,
-            axis=0
-        )
+        imagenes_validas.append(imagen)
+        rutas_validas.append(ruta)
 
-        ruta_archivo = (
-            carpeta_resolucion
-            / f"{prefijo}_{contador_lote}.npz"
-        )
-
-        np.savez_compressed(
-            ruta_archivo,
-            images=array_lote,
-            paths=np.array(rutas_validas)
-        )
-
-        archivos_generados.append(
-            {
-                "archivo": str(ruta_archivo),
-                "resolucion": f"{ancho}x{alto}",
-                "imagenes_validas": len(imagenes_validas),
-                "imagenes_fallidas": len(rutas_fallidas)
-            }
-        )
-
-        print(
-            f"  Lote guardado: {len(imagenes_validas)} imágenes"
-        )
-
-        if rutas_fallidas:
-            print(
-                f"  Imágenes fallidas: {len(rutas_fallidas)}"
-            )
-
-        contador_lote += 1
-
-    print(
-        f"\nProcesamiento {ancho}x{alto} finalizado. "
-        f"{len(archivos_generados)} lotes guardados."
-    )
-
-    return archivos_generados
+    return {
+        "imagenes": np.asarray(imagenes_validas, dtype=np.uint8),
+        "rutas": np.asarray(rutas_validas, dtype=object),
+        "rutas_fallidas": np.asarray(rutas_fallidas, dtype=object),
+        "imagenes_validas": len(imagenes_validas),
+        "imagenes_fallidas": len(rutas_fallidas)
+    }
 
 
 def procesar_multiples_resoluciones(
@@ -567,7 +421,17 @@ def procesar_multiples_resoluciones(
     Por defecto genera:
     - 224 × 224
     - 256 × 256
+
+    Retorna
+    -------
+    dict
+        {
+            "224x224": [...],
+            "256x256": [...],
+            "rutas_fallidas": [...]
+        }
     """
+
     if resoluciones is None:
         resoluciones = [
             (224, 224),
@@ -575,11 +439,13 @@ def procesar_multiples_resoluciones(
         ]
 
     resultados = {}
+    rutas_fallidas = set()
 
     for tamaño in resoluciones:
+
         clave = f"{tamaño[0]}x{tamaño[1]}"
 
-        resultados[clave] = procesar_lote(
+        lotes = procesar_lote(
             rutas_imagenes=rutas_imagenes,
             tamaño=tamaño,
             num_procesos=num_procesos,
@@ -587,6 +453,14 @@ def procesar_multiples_resoluciones(
             carpeta_salida=carpeta_salida,
             prefijo="lote"
         )
+
+        resultados[clave] = lotes
+
+        # Acumular las rutas que fallaron
+        for lote in lotes:
+            rutas_fallidas.update(lote["rutas_fallidas"].tolist())
+
+    resultados["rutas_fallidas"] = sorted(rutas_fallidas)
 
     return resultados
 
