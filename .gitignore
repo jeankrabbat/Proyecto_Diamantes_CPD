@@ -234,11 +234,11 @@ kaggle.json
 # KaggleHub cache y datasets grandes
 kagglehub_cache/
 data/raw/
-*.jpg
-*.jpeg
-*.png
-*.webp
-*.bmp
+data/raw/**/*.jpg
+data/raw/**/*.jpeg
+data/raw/**/*.png
+data/raw/**/*.webp
+data/raw/**/*.bmp
 *.zip
 
 # Jupyter temporales
