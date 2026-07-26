@@ -11,6 +11,15 @@ from sklearn.preprocessing import LabelEncoder
 import tensorflow as tf
 from tensorflow.keras import layers, models
 
+
+gpus = tf.config.list_physical_devices('GPU')
+if gpus:
+    try:
+        for gpu in gpus:
+            tf.config.experimental.set_memory_growth(gpu, True)
+        print("Crecimiento dinámico de memoria GPU activado.")
+    except RuntimeError as e:
+        print(e)
 # -----------------------------------------------------------------------------
 # 1. Rutas del Proyecto
 # -----------------------------------------------------------------------------
