@@ -1,0 +1,4 @@
+Modelo,Accuracy,Precision,Recall,F1,Accuracy ±1,Tiempo (min)
+convnext_tiny,0.5073,0.4406,0.4774,0.4325,0.8434,79.9
+efficientnet_b0,0.5087,0.4434,0.4777,0.4192,0.8343,30.8
+resnet50,0.4664,0.4389,0.4569,0.3916,0.7727,51.2

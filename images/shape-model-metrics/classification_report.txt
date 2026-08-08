@@ -1,0 +1,19 @@
+Reporte de Evaluación - Modelo de Forma (Shape)
+Fecha: 2026-08-07_21-14-24
+Accuracy global (test): 0.9989
+Macro F1: 0.9986
+Weighted F1: 0.9989
+
+              precision    recall  f1-score   support
+
+     cushion       1.00      1.00      1.00      1022
+     emerald       1.00      1.00      1.00       669
+       heart       1.00      1.00      1.00       744
+        oval       1.00      1.00      1.00      1275
+        pear       1.00      1.00      1.00       847
+    princess       1.00      1.00      1.00       784
+       round       1.00      1.00      1.00      4105
+
+    accuracy                           1.00      9446
+   macro avg       1.00      1.00      1.00      9446
+weighted avg       1.00      1.00      1.00      9446
