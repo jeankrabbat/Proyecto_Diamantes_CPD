@@ -157,3 +157,28 @@ history = model.fit(
 
 model.save(MODEL_OUTPUT_PATH)
 print(f"\n¡Entrenamiento finalizado y guardado en {MODEL_OUTPUT_PATH}!")
+
+# -----------------------------------------------------------------------------
+# Guardar Historial e Imprimir Métricas
+# -----------------------------------------------------------------------------
+import json
+
+# Guardar historial completo en un archivo JSON
+history_path = PROJECT_ROOT / "src" / "history_shape.json"
+with open(history_path, "w") as f:
+    json.dump(history.history, f)
+
+# Extraer mejor época (basada en el menor val_loss)
+best_epoch_idx = int(np.argmin(history.history['val_loss']))
+train_acc = history.history['accuracy'][best_epoch_idx] * 100
+val_acc = history.history['val_accuracy'][best_epoch_idx] * 100
+total_epochs = len(history.history['loss'])
+
+print("\n" + "="*50)
+print("📊 DATOS DE EVALUACIÓN PARA TU TABLA")
+print("="*50)
+print(f"Modelo          : Shape (EfficientNetB0)")
+print(f"Accuracy Train  : {train_acc:.2f}%")
+print(f"Accuracy Val    : {val_acc:.2f}%")
+print(f"Épocas ejecutadas: {total_epochs} (Mejor época: {best_epoch_idx + 1})")
+print("="*50)
