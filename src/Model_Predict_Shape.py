@@ -1,6 +1,7 @@
-import io
 import json
+import io
 from pathlib import Path
+
 import cv2
 import h5py
 import joblib
@@ -30,6 +31,7 @@ HISTORY_OUTPUT_PATH = PROJECT_ROOT / "src" / "history_shape.json"
 
 TARGET_SIZE = (224, 224)
 BATCH_SIZE = 32
+SHUFFLE_BUFFER = 512  # buffer de reshuffling; NO son todas las imágenes en RAM
 
 # Fase 1: solo se entrena el head, con el backbone congelado.
 EPOCHS_HEAD = 15
@@ -64,27 +66,56 @@ def resize_with_padding(img, target_size=(224, 224)):
     )
 
 
-def load_images_from_h5(h5_path, indices, target_size=(224, 224)):
-    images = []
-    print(f"Cargando {len(indices):,} imágenes desde el HDF5...")
+# -----------------------------------------------------------------------------
+# Pipeline tf.data — decodificación y carga BAJO DEMANDA
+# -----------------------------------------------------------------------------
+# En lugar de cargar las ~47k imágenes completas a un np.array en RAM
+# (lo cual agotaba la memoria del nodo en Kabre — ver traceback de
+# cv2.error: Insufficient memory), este generador abre el HDF5 una vez
+# y decodifica/redimensiona una imagen a la vez, entregándolas a Keras
+# por lotes a través de tf.data. Esto mantiene en memoria solo el lote
+# actual (BATCH_SIZE imágenes), no el dataset completo.
+def make_dataset(h5_path, indices, labels, target_size, batch_size, shuffle):
+    indices = np.asarray(indices)
+    labels = np.asarray(labels)
 
-    with h5py.File(h5_path, 'r') as h5_file:
-        image_bytes_dataset = h5_file['image_bytes']
-        for count, idx in enumerate(indices):
-            if count % 2000 == 0 and count > 0:
-                print(f"Procesadas {count:,}/{len(indices):,} imágenes...")
+    def generador():
+        # Se abre el archivo una vez por cada pasada completa del
+        # dataset (una por época), y se cierra al terminar.
+        orden = np.arange(len(indices))
+        if shuffle:
+            np.random.shuffle(orden)
 
-            raw_bytes = image_bytes_dataset[idx]
-            img = cv2.imdecode(raw_bytes, cv2.IMREAD_COLOR)
+        with h5py.File(h5_path, "r") as h5_file:
+            image_bytes_dataset = h5_file["image_bytes"]
+            for pos in orden:
+                idx = indices[pos]
+                raw_bytes = image_bytes_dataset[idx]
+                img = cv2.imdecode(raw_bytes, cv2.IMREAD_COLOR)
 
-            if img is not None:
-                img = resize_with_padding(img, target_size)
-                img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-                images.append(img)
-            else:
-                raise ValueError(f"Error al decodificar la imagen en el índice {idx}")
+                if img is None:
+                    # Ya fueron filtradas en extract.py, pero por
+                    # seguridad se evita romper el entrenamiento.
+                    img = np.zeros((*target_size, 3), dtype=np.uint8)
+                else:
+                    img = resize_with_padding(img, target_size)
+                    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
-    return np.array(images, dtype=np.uint8)
+                yield img.astype(np.float32), labels[pos]
+
+    dataset = tf.data.Dataset.from_generator(
+        generador,
+        output_signature=(
+            tf.TensorSpec(shape=(*target_size, 3), dtype=tf.float32),
+            tf.TensorSpec(shape=(), dtype=tf.int64),
+        ),
+    )
+
+    if shuffle:
+        dataset = dataset.shuffle(SHUFFLE_BUFFER, reshuffle_each_iteration=True)
+
+    dataset = dataset.batch(batch_size).prefetch(tf.data.AUTOTUNE)
+    return dataset
 
 
 # -----------------------------------------------------------------------------
@@ -93,43 +124,42 @@ def load_images_from_h5(h5_path, indices, target_size=(224, 224)):
 if not HDF5_PATH.exists():
     raise FileNotFoundError(f"No se encontró el archivo HDF5 en {HDF5_PATH}.")
 
-with h5py.File(HDF5_PATH, 'r') as h5_file:
-    metadata_bytes = h5_file['metadata_csv'][()]
-    metadata_str = metadata_bytes.decode('utf-8') if isinstance(metadata_bytes, bytes) else str(metadata_bytes)
+with h5py.File(HDF5_PATH, "r") as h5_file:
+    metadata_bytes = h5_file["metadata_csv"][()]
+    metadata_str = metadata_bytes.decode("utf-8") if isinstance(metadata_bytes, bytes) else str(metadata_bytes)
 
 df_metadata = pd.read_csv(io.StringIO(metadata_str))
 
-valid_mask = df_metadata['shape'].str.lower() != 'marquise'
-indices_validos = np.where(valid_mask)[0]
+valid_mask = df_metadata["shape"].str.lower() != "marquise"
+indices_validos = np.where(valid_mask)[0]  # índices reales dentro del HDF5
 df_filtrado = df_metadata[valid_mask].copy()
 
 label_encoder = LabelEncoder()
-y_encoded = label_encoder.fit_transform(df_filtrado['shape'])
+y_encoded = label_encoder.fit_transform(df_filtrado["shape"])
 joblib.dump(label_encoder, ENCODER_OUTPUT_PATH)
 
-X_images = load_images_from_h5(HDF5_PATH, indices_validos, target_size=TARGET_SIZE)
+num_classes = len(label_encoder.classes_)
+print(f"Total de imágenes válidas (sin Marquise): {len(indices_validos):,}")
+print(f"Clases: {list(label_encoder.classes_)}")
 
-# -----------------------------------------------------------------------------
-# IMPORTANTE — Normalización
-# -----------------------------------------------------------------------------
-# EfficientNet (familia Keras Applications) ya incluye internamente su
-# propia capa de preprocesamiento/rescaling y espera píxeles en el rango
-# [0, 255], NO en [0, 1]. Dividir aquí entre 255 provoca una doble
-# normalización que aplasta la señal de la imagen antes de que el
-# backbone la reciba, y fue la causa principal del bajo accuracy
-# (~43%) obtenido en la corrida anterior. Por eso se deja el array en
-# float32 SIN dividir entre 255.
-X_images = X_images.astype('float32')
+# Split se hace sobre los ÍNDICES, no sobre las imágenes cargadas.
+train_idx, val_idx, y_train, y_val = train_test_split(
+    indices_validos, y_encoded, test_size=0.2, random_state=42, stratify=y_encoded
+)
 
-X_train, X_test, y_train, y_test = train_test_split(
-    X_images, y_encoded, test_size=0.2, random_state=42, stratify=y_encoded
+print(f"Imágenes de entrenamiento: {len(train_idx):,}")
+print(f"Imágenes de validación:    {len(val_idx):,}")
+
+train_dataset = make_dataset(
+    HDF5_PATH, train_idx, y_train, TARGET_SIZE, BATCH_SIZE, shuffle=True
+)
+val_dataset = make_dataset(
+    HDF5_PATH, val_idx, y_val, TARGET_SIZE, BATCH_SIZE, shuffle=False
 )
 
 # -----------------------------------------------------------------------------
 # Definición del Modelo con Transfer Learning y Data Augmentation
 # -----------------------------------------------------------------------------
-num_classes = len(label_encoder.classes_)
-
 # Augmentación de datos en GPU
 data_augmentation = tf.keras.Sequential([
     layers.RandomFlip("horizontal_and_vertical"),
@@ -138,15 +168,18 @@ data_augmentation = tf.keras.Sequential([
     layers.RandomContrast(0.15),
 ])
 
-# Preprocesamiento oficial de EfficientNet (reemplaza la normalización
-# manual). Se aplica dentro del grafo del modelo para que quede
-# encapsulado y no se pueda olvidar/duplicar en inferencia.
+# Preprocesamiento oficial de EfficientNet. IMPORTANTE: EfficientNet
+# espera píxeles en [0, 255], no en [0, 1]. Dividir manualmente entre
+# 255 (como en la versión anterior) provoca una doble normalización
+# que aplasta la señal de la imagen y fue la causa principal del bajo
+# accuracy (~43%) obtenido antes. Al aplicarlo aquí, dentro del grafo
+# del modelo, queda encapsulado y no se puede volver a duplicar.
 preprocess_input = tf.keras.applications.efficientnet.preprocess_input
 
 # Base preentrenada en ImageNet
 base_model = tf.keras.applications.EfficientNetB0(
     include_top=False,
-    weights='imagenet',
+    weights="imagenet",
     input_shape=(TARGET_SIZE[0], TARGET_SIZE[1], 3)
 )
 base_model.trainable = False  # Congelada durante la Fase 1
@@ -159,41 +192,35 @@ x = base_model(x, training=False)
 x = layers.GlobalAveragePooling2D()(x)
 x = layers.BatchNormalization()(x)
 x = layers.Dropout(0.4)(x)
-outputs = layers.Dense(num_classes, activation='softmax')(x)
+outputs = layers.Dense(num_classes, activation="softmax")(x)
 
 model = models.Model(inputs, outputs)
 
 model.compile(
     optimizer=tf.keras.optimizers.Adam(learning_rate=LR_HEAD),
-    loss='sparse_categorical_crossentropy',
-    metrics=['accuracy']
+    loss="sparse_categorical_crossentropy",
+    metrics=["accuracy"]
 )
 
 # -----------------------------------------------------------------------------
 # Fase 1 — Entrenamiento del head (backbone congelado)
 # -----------------------------------------------------------------------------
 cb_list = [
-    callbacks.EarlyStopping(monitor='val_loss', patience=5, restore_best_weights=True),
-    callbacks.ReduceLROnPlateau(monitor='val_loss', factor=0.2, patience=2, min_lr=1e-6)
+    callbacks.EarlyStopping(monitor="val_loss", patience=5, restore_best_weights=True),
+    callbacks.ReduceLROnPlateau(monitor="val_loss", factor=0.2, patience=2, min_lr=1e-6)
 ]
 
 print("\nFase 1: entrenando el head (backbone congelado)...")
 history_head = model.fit(
-    X_train, y_train,
+    train_dataset,
     epochs=EPOCHS_HEAD,
-    batch_size=BATCH_SIZE,
-    validation_data=(X_test, y_test),
+    validation_data=val_dataset,
     callbacks=cb_list
 )
 
 # -----------------------------------------------------------------------------
 # Fase 2 — Fine-tuning (se descongelan las capas superiores del backbone)
 # -----------------------------------------------------------------------------
-# Congelar el backbone durante toda la corrida limita cuánto puede
-# adaptarse el modelo al dominio específico de fotografías de
-# diamantes (muy distinto a ImageNet). Se descongelan las capas
-# superiores y se re-entrena con un learning rate mucho más bajo para
-# afinar esas capas sin destruir los pesos preentrenados.
 print("\nFase 2: fine-tuning del backbone...")
 base_model.trainable = True
 for layer in base_model.layers[:UNFREEZE_FROM_LAYER]:
@@ -201,15 +228,14 @@ for layer in base_model.layers[:UNFREEZE_FROM_LAYER]:
 
 model.compile(
     optimizer=tf.keras.optimizers.Adam(learning_rate=LR_FINE_TUNE),
-    loss='sparse_categorical_crossentropy',
-    metrics=['accuracy']
+    loss="sparse_categorical_crossentropy",
+    metrics=["accuracy"]
 )
 
 history_fine = model.fit(
-    X_train, y_train,
+    train_dataset,
     epochs=EPOCHS_FINE_TUNE,
-    batch_size=BATCH_SIZE,
-    validation_data=(X_test, y_test),
+    validation_data=val_dataset,
     callbacks=cb_list
 )
 
@@ -227,15 +253,15 @@ history_completo = {
 with open(HISTORY_OUTPUT_PATH, "w") as f:
     json.dump(history_completo, f)
 
-best_epoch_idx = int(np.argmin(history_completo['val_loss']))
-train_acc = history_completo['accuracy'][best_epoch_idx] * 100
-val_acc = history_completo['val_accuracy'][best_epoch_idx] * 100
-total_epochs = len(history_completo['loss'])
+best_epoch_idx = int(np.argmin(history_completo["val_loss"]))
+train_acc = history_completo["accuracy"][best_epoch_idx] * 100
+val_acc = history_completo["val_accuracy"][best_epoch_idx] * 100
+total_epochs = len(history_completo["loss"])
 
 print("\n" + "=" * 50)
 print("📊 DATOS DE EVALUACIÓN PARA TU TABLA")
 print("=" * 50)
-print(f"Modelo          : Shape (EfficientNetB0, fine-tuned)")
+print("Modelo          : Shape (EfficientNetB0, fine-tuned)")
 print(f"Accuracy Train  : {train_acc:.2f}%")
 print(f"Accuracy Val    : {val_acc:.2f}%")
 print(f"Épocas ejecutadas: {total_epochs} (Mejor época: {best_epoch_idx + 1})")
