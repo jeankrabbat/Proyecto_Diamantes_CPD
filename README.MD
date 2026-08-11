@@ -31,36 +31,41 @@ La solución combina aprendizaje por transferencia, arquitecturas convolucionale
 
 ---
 
-## Estructura del Repositorio
+## 📂 Estructura del Repositorio
 
-```
-Proyecto_Diamantes_CPD/
-├── data/
-│   └── muestra_prueba.csv            # Muestra de datos para pruebas rápidas
-├── images/
-│   ├── clarity-model-metrics/        # Métricas y gráficos del modelo de claridad
-│   └── shape-model-metrics/          # Métricas y gráficos del modelo de forma
-├── models/
-│   ├── ConvNeXt-Clarity-Model.pt     # Modelo final de claridad (seleccionado)
-│   ├── Shape-Model.keras             # Modelo final de forma
-│   ├── label_encoder.pkl             # Label encoder del modelo de claridad
-│   └── label_encoder_shape.pkl       # Label encoder del modelo de forma
-├── notebooks/
-│   ├── EDA_Gems.ipynb                # Análisis exploratorio de datos
-│   └── Model_Predict_Colour.ipynb    # Desarrollo del modelo de color
-├── src/
-│   ├── Calibrate_IF_Threshold.py     # Calibración del umbral de la clase IF (claridad)
-│   ├── Check_Hardware.py             # Verificación de disponibilidad de GPU/CUDA
-│   ├── ETL.py                        # Orquestador del pipeline de extracción/transformación
-│   ├── Model_Predict_Clarity.py      # Entrenamiento y evaluación del modelo de claridad
-│   ├── Model_Predict_Shape.py        # Entrenamiento y evaluación del modelo de forma
-│   ├── Preparar_Dataset_HDF5.py      # Construcción del dataset consolidado en HDF5
-│   ├── extract.py                    # Extracción de datos e imágenes
-│   └── transform.py                  # Limpieza y transformación de metadata
-├── .gitattributes
-├── .gitignore
-├── README.md
-└── requirements.txt
+```text
+💎 Proyecto_Diamantes_CPD/
+├── 📂 data/
+│   └── 📄 muestra_prueba.csv            # Muestra de datos para pruebas rápidas
+│
+├── 📂 images/
+│   ├── 📂 clarity-model-metrics/        # Métricas y gráficos del modelo de claridad
+│   └── 📂 shape-model-metrics/          # Métricas y gráficos del modelo de forma
+│
+├── 📂 models/
+│   ├── 🧠 ConvNeXt-Clarity-Model.pt     # Modelo final de claridad
+│   ├── 🧠 Shape-Model.keras             # Modelo final de forma
+│   ├── 🏷️ label_encoder.pkl             # Label encoder de claridad
+│   └── 🏷️ label_encoder_shape.pkl       # Label encoder de forma
+│
+├── 📂 notebooks/
+│   ├── 📓 EDA_Gems.ipynb                # Análisis exploratorio de datos
+│   └── 📓 Model_Predict_Colour.ipynb    # Desarrollo del modelo de color
+│
+├── 📂 src/
+│   ├── 🐍 Calibrate_IF_Threshold.py     # Calibración del umbral IF (claridad)
+│   ├── 🐍 Check_Hardware.py             # Verificación de GPU/CUDA
+│   ├── 🐍 ETL.py                        # Pipeline de extracción y transformación
+│   ├── 🐍 Model_Predict_Clarity.py      # Entrenamiento del modelo de claridad
+│   ├── 🐍 Model_Predict_Shape.py        # Entrenamiento del modelo de forma
+│   ├── 🐍 Preparar_Dataset_HDF5.py      # Construcción del dataset HDF5
+│   ├── 🐍 extract.py                    # Extracción de datos e imágenes
+│   └── 🐍 transform.py                  # Limpieza y transformación de metadatos
+│
+├── ⚙️ .gitattributes
+├── 🚫 .gitignore
+├── 📖 README.md
+└── 📦 requirements.txt
 ```
 
 ---
@@ -209,7 +214,7 @@ El flujo de trabajo sigue el siguiente orden:
 |---|---|---|
 | **Forma (shape)** | Transferencia de aprendizaje sobre EfficientNetB0 (TensorFlow/Keras), con entrenamiento en dos fases (backbone congelado + fine-tuning) | `models/Shape-Model.keras` |
 | **Claridad (clarity)** | Comparación de tres arquitecturas preentrenadas en ImageNet (ResNet50, EfficientNet-B0, ConvNeXt Tiny) sobre PyTorch, con Focal Loss, ponderación de clases y selección del mejor modelo por F1-macro | `models/ConvNeXt-Clarity-Model.pt` |
-| **Color (colour)** | CNN convolucional entrenada sobre las imágenes del dataset | *(en desarrollo)* |
+| **Color (colour)** | CNN convolucional entrenada sobre las imágenes del dataset | `models/Colour-Model` |
 
 ---
 
