@@ -43,6 +43,14 @@ La solución combina aprendizaje por transferencia, arquitecturas convolucionale
 │   └── 📂 shape-model-metrics/          # Métricas y gráficos del modelo de forma
 │
 ├── 📂 models/
+│   ├── 📂 Colour-Model/                 # Checkpoint Orbax del modelo de color
+│   │   ├── 📂 array_metadatas/
+│   │   ├── 📂 d/
+│   │   ├── 📄 ocdbt.process_0
+│   │   ├── 📄 _CHECKPOINT_METADATA
+│   │   ├── 📄 _METADATA
+│   │   ├── 📄 _sharding
+│   │   └── 📄 manifest.ocdbt
 │   ├── 🧠 ConvNeXt-Clarity-Model.pt     # Modelo final de claridad
 │   ├── 🧠 Shape-Model.keras             # Modelo final de forma
 │   ├── 🏷️ label_encoder.pkl             # Label encoder de claridad
